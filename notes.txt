@@ -1,0 +1,3 @@
+7. Getting Started With Smithery AI:
+In this platform, it's like an aggregator of various MCP severs of different service providers.
+Pour lancer le mcp-server afin d'être accessible sur Claude: uv run mcp install main.py
