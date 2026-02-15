@@ -1,3 +1,6 @@
 7. Getting Started With Smithery AI:
 In this platform, it's like an aggregator of various MCP severs of different service providers.
 Pour lancer le mcp-server afin d'être accessible sur Claude: uv run mcp install main.py
+
+Section 5: How to build Docker MCP Server
+Docker allows to packaging these MCP servers as containers, 
