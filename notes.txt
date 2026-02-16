@@ -7,3 +7,9 @@ Docker allows to packaging these MCP servers as containers,
 
 22:Introduction of LangChain MCP Adapters
 We can create MCP Client with the LangChain MCP adapters
+
+24: Introduction to Mutiple server
+Build a client that can interrac with two MCP-server
+
+
+26. Introduction to SSE and Overview
