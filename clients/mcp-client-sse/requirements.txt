@@ -1,7 +1,4 @@
-google-genai
-google-generativeai
 langchain
-langchain-google-genai
 langchain-mcp-adapters
 langgraph
 mcp
@@ -9,3 +6,4 @@ nest-asyncio
 pillow
 python-dotenv
 streamlit
+groq

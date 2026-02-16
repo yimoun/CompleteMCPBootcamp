@@ -5,7 +5,7 @@ This file implements an MCP client that connects to an MCP server using SSE (Ser
 SSE is a technology that allows a server to push real-time updates to a client over a single, persistent HTTP connection.
 Unlike websockets, SSE provides one-way communication from the server to the client, which is useful for streaming updates.
 
-This client also uses Google's Gemini SDK for AI model integration. The Gemini API can perform natural language processing
+This client uses Groq for AI model integration. Groq can perform natural language processing
 tasks and, when needed, call external tools (in this case, MCP tools) to perform specific functions.
 
 A stream manager (or stream context) in this code is responsible for managing the lifecycle of the SSE connection,
@@ -25,11 +25,8 @@ from mcp import ClientSession
 # These streams represent the channels over which data is sent and received via SSE.
 from mcp.client.sse import sse_client
 
-# Import components from the Gemini SDK for AI-based function calling and natural language processing.
-from google import genai
-from google.genai import types
-from google.genai.types import Tool, FunctionDeclaration
-from google.genai.types import GenerateContentConfig
+# Import Groq client for AI-based function calling and natural language processing.
+from groq import Groq
 
 # Import dotenv to load environment variables from a .env file (e.g., API keys).
 from dotenv import load_dotenv
@@ -42,12 +39,12 @@ class MCPClient:
     def __init__(self):
         """
         Initialize the MCP client.
-        
+
         This constructor sets up:
-         - The Gemini AI client using an API key from the environment variables.
+         - The Groq client using an API key from the environment variables.
          - Placeholders for the client session and the stream context (which manages the SSE connection).
-        
-        The Gemini client is used to generate content (e.g., processing user queries) and can request to call tools.
+
+        The Groq client is used to generate content (e.g., processing user queries) and can request to call tools.
         """
         # Placeholder for the MCP session that will manage communication with the MCP server.
         self.session: Optional[ClientSession] = None
@@ -56,13 +53,13 @@ class MCPClient:
         self._streams_context = None  # Manages the SSE stream lifecycle
         self._session_context = None  # Manages the MCP session lifecycle
 
-        # Retrieve the Gemini API key from environment variables.
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            raise ValueError("GEMINI_API_KEY not found. Please add it to your .env file.")
+        # Retrieve the Groq API key from environment variables.
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            raise ValueError("GROQ_API_KEY not found. Please add it to your .env file.")
 
-        # Initialize the Gemini client with the API key. This client is used to communicate with the Gemini AI models.
-        self.genai_client = genai.Client(api_key=gemini_api_key)
+        # Initialize the Groq client with the API key.
+        self.groq_client = Groq(api_key=groq_api_key)
 
     async def connect_to_sse_server(self, server_url: str):
         """
@@ -101,8 +98,8 @@ class MCPClient:
         tools = response.tools
         print("\nConnected to server with tools:", [tool.name for tool in tools])
 
-        # Convert the MCP tool definitions to a format compatible with the Gemini API for function calling.
-        self.function_declarations = convert_mcp_tools_to_gemini(tools)
+        # Convert the MCP tool definitions to a format compatible with the Groq API for function calling.
+        self.tool_definitions = convert_mcp_tools_to_groq(tools)
 
     async def cleanup(self):
         """
@@ -120,14 +117,14 @@ class MCPClient:
 
     async def process_query(self, query: str) -> str:
         """
-        Process a user query using the Gemini API. If Gemini requests a tool call (via function calling),
+        Process a user query using the Groq API. If Groq requests a tool call (via function calling),
         this function will call the tool on the MCP server and send the result back to Gemini for a final response.
         
         Steps:
-         1. Format the user's query as a structured content object.
-         2. Send the query to Gemini and include available MCP tool declarations.
-         3. Check if Gemini's response contains a function call; if so, execute the tool and send back the response.
-         4. Return the final processed text from Gemini.
+         1. Format the user's query as a chat message.
+         2. Send the query to Groq and include available MCP tool declarations.
+         3. Check if Groq's response contains a function call; if so, execute the tool and send back the response.
+         4. Return the final processed text from Groq.
         
         Args:
             query (str): The input query from the user.
@@ -135,80 +132,74 @@ class MCPClient:
         Returns:
             str: The final text response generated by the Gemini model.
         """
-        # 1. Create a Gemini Content object representing the user's query.
-        #    This object includes a role (user) and the query text wrapped in a part.
-        user_prompt_content = types.Content(
-            role='user',
-            parts=[types.Part.from_text(text=query)]
+        messages = [{"role": "user", "content": query}]
+
+        # 2. Send the query to the Groq model.
+        response = self.groq_client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            messages=messages,
+            tools=self.tool_definitions,
+            tool_choice="auto",
         )
 
-        # 2. Send the query to the Gemini model.
-        #    We include available tool declarations so Gemini knows it can request function calls.
-        response = self.genai_client.models.generate_content(
-            model='gemini-2.0-flash-001',  # Name of the Gemini model to use.
-            contents=[user_prompt_content],
-            config=types.GenerateContentConfig(
-                tools=self.function_declarations,  # Pass in the list of MCP tools formatted for Gemini.
-            ),
+        assistant_message = response.choices[0].message
+        tool_calls = assistant_message.tool_calls or []
+
+        # If Groq didn't request tool calls, return its response.
+        if not tool_calls:
+            return assistant_message.content or ""
+
+        # Add the assistant tool call message.
+        messages.append(
+            {
+                "role": "assistant",
+                "content": assistant_message.content or "",
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in tool_calls
+                ],
+            }
         )
 
-        # Prepare a list to accumulate the final response text.
-        final_text = []
+        # Execute requested tool calls and append results.
+        for call in tool_calls:
+            tool_name = call.function.name
+            try:
+                tool_args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                tool_args = {}
 
-        # 3. Process each candidate response from Gemini.
-        for candidate in response.candidates:
-            if candidate.content.parts:  # Ensure that the response has parts (sections).
-                for part in candidate.content.parts:
-                    # If the part includes a function call, Gemini is asking us to run an MCP tool.
-                    if part.function_call:
-                        # Extract the name of the tool and its arguments from the function call.
-                        tool_name = part.function_call.name
-                        tool_args = part.function_call.args
-                        print(f"\n[Gemini requested tool call: {tool_name} with args {tool_args}]")
+            print(f"\n[Groq requested tool call: {tool_name} with args {tool_args}]")
 
-                        # Attempt to call the specified tool on the MCP server.
-                        try:
-                            result = await self.session.call_tool(tool_name, tool_args)
-                            # Wrap the result in a dictionary under the key "result".
-                            function_response = {"result": result.content}
-                        except Exception as e:
-                            # If an error occurs, capture the error message.
-                            function_response = {"error": str(e)}
+            try:
+                result = await self.session.call_tool(tool_name, tool_args)
+                tool_result_text = stringify_tool_result(result)
+            except Exception as e:
+                tool_result_text = f"Tool error: {e}"
 
-                        # Create a Gemini function response part using the result of the tool call.
-                        function_response_part = types.Part.from_function_response(
-                            name=tool_name,
-                            response=function_response
-                        )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": tool_result_text,
+                }
+            )
 
-                        # Wrap the function response part in a Content object marked as coming from a tool.
-                        function_response_content = types.Content(
-                            role='tool',
-                            parts=[function_response_part]
-                        )
+        # Send tool results back to Groq for a final response.
+        final_response = self.groq_client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            messages=messages,
+            tools=self.tool_definitions,
+        )
 
-                        # 4. Send the original query, the function call, and the tool response back to Gemini.
-                        #    Gemini will process this combined input to generate the final answer.
-                        response = self.genai_client.models.generate_content(
-                            model='gemini-2.0-flash-001',
-                            contents=[
-                                user_prompt_content,       # Original user query.
-                                part,                      # The function call that was requested.
-                                function_response_content, # The response from executing the tool.
-                            ],
-                            config=types.GenerateContentConfig(
-                                tools=self.function_declarations,
-                            ),
-                        )
-
-                        # Append the text from the first part of Gemini's new candidate response.
-                        final_text.append(response.candidates[0].content.parts[0].text)
-                    else:
-                        # If there is no function call, just use the text provided by Gemini.
-                        final_text.append(part.text)
-
-        # 5. Combine all parts of the response into a single string to be returned.
-        return "\n".join(final_text)
+        return final_response.choices[0].message.content or ""
 
     async def chat_loop(self):
         """
@@ -254,38 +245,52 @@ def clean_schema(schema):
     return schema
 
 
-def convert_mcp_tools_to_gemini(mcp_tools):
+def convert_mcp_tools_to_groq(mcp_tools):
     """
-    Convert MCP tool definitions into Gemini-compatible function declarations.
-    
-    Each MCP tool contains information such as its name, description, and an input JSON schema.
-    This function cleans the JSON schema (by removing unnecessary fields) and then creates a Gemini FunctionDeclaration.
-    The function declarations are then wrapped in Gemini Tool objects.
-    
+    Convert MCP tool definitions into Groq-compatible tool declarations.
+
     Args:
         mcp_tools (list): A list of MCP tool objects with attributes 'name', 'description', and 'inputSchema'.
-    
+
     Returns:
-        list: A list of Gemini Tool objects ready for function calling.
+        list: A list of tool definitions compatible with Groq function calling.
     """
-    gemini_tools = []
+    groq_tools = []
 
     for tool in mcp_tools:
-        # Clean the input schema to remove extraneous fields like 'title'
         parameters = clean_schema(tool.inputSchema)
-
-        # Create a function declaration that describes how Gemini should call this tool.
-        function_declaration = FunctionDeclaration(
-            name=tool.name,
-            description=tool.description,
-            parameters=parameters
+        groq_tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": parameters,
+                },
+            }
         )
 
-        # Wrap the function declaration in a Gemini Tool object.
-        gemini_tool = Tool(function_declarations=[function_declaration])
-        gemini_tools.append(gemini_tool)
+    return groq_tools
 
-    return gemini_tools
+
+def stringify_tool_result(result) -> str:
+    """
+    Convert an MCP CallToolResult into a text payload suitable for Groq tool responses.
+    """
+    if hasattr(result, "content") and result.content:
+        parts = []
+        for content in result.content:
+            text = getattr(content, "text", None)
+            if text:
+                parts.append(text)
+        if parts:
+            return "\n".join(parts)
+
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        return json.dumps(structured)
+
+    return str(result)
 
 
 async def main():
