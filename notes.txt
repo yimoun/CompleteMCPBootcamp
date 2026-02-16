@@ -4,3 +4,6 @@ Pour lancer le mcp-server afin d'être accessible sur Claude: uv run mcp install
 
 Section 5: How to build Docker MCP Server
 Docker allows to packaging these MCP servers as containers, 
+
+22:Introduction of LangChain MCP Adapters
+We can create MCP Client with the LangChain MCP adapters
