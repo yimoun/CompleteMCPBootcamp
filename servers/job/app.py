@@ -4,7 +4,9 @@ from src.job_api import fetch_linkedin_jobs, fetch_naukri_jobs
 
 st.set_page_config(page_title="Job Recommender", layout="wide")
 st.title("📄AI Job Recommender")
-st.markdown("Upload your resume and get job recommendations based on your skills and experience from LinkedIn and Naukri.")
+st.markdown("Upload your resume and get job recommendations based on your skills and experience from free job APIs.")
+
+location = st.text_input("Preferred location (city/country)", value="Worldwide")
 
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 
@@ -50,13 +52,13 @@ if uploaded_file:
 
         st.success(f"Extracted Job Keywords: {search_keywords_clean}")
 
-        with st.spinner("Fetching jobs from LinkedIn and Naukri..."):
-            linkedin_jobs, linkedin_error = fetch_linkedin_jobs(search_keywords_clean, rows=60)
-            naukri_jobs, naukri_error = fetch_naukri_jobs(search_keywords_clean, rows=60)
+        with st.spinner("Fetching jobs from free job APIs..."):
+            linkedin_jobs, linkedin_error = fetch_linkedin_jobs(search_keywords_clean, location=location, rows=60)
+            naukri_jobs, naukri_error = fetch_naukri_jobs(search_keywords_clean, location=location, rows=60)
 
 
         st.markdown("---")
-        st.header("💼 Top LinkedIn Jobs")
+        st.header("💼 Top Remotive Jobs (Remote)")
 
         if linkedin_error:
             st.error(linkedin_error)
@@ -68,10 +70,10 @@ if uploaded_file:
                 st.markdown(f"- 🔗 [View Job]({job.get('link')})")
                 st.markdown("---")
         else:
-            st.warning("No LinkedIn jobs found.")
+            st.warning("No Remotive jobs found.")
 
         st.markdown("---")
-        st.header("💼 Top Naukri Jobs (India)")
+        st.header("💼 Top The Muse Jobs")
 
         if naukri_error:
             st.error(naukri_error)
@@ -83,6 +85,6 @@ if uploaded_file:
                 st.markdown(f"- 🔗 [View Job]({job.get('url')})")
                 st.markdown("---")
         else:
-            st.warning("No Naukri jobs found.")
+            st.warning("No The Muse jobs found.")
 
 

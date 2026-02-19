@@ -1,55 +1,74 @@
-from apify_client import ApifyClient
-from apify_client._errors import ApifyApiError
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-APIFY_API_TOKEN = os.getenv("APIFY_API_TOKEN")
-LINKEDIN_ACTOR_ID = os.getenv("APIFY_LINKEDIN_ACTOR_ID", "apify/linkedin-jobs-scraper")
-NAUKRI_ACTOR_ID = os.getenv("APIFY_NAUKRI_ACTOR_ID", "apify/naukri-jobs-scraper")
-
-apify_client = ApifyClient(APIFY_API_TOKEN) if APIFY_API_TOKEN else None
+import requests
 
 # Fetch LinkedIn jobs based on search query and location
 def fetch_linkedin_jobs(search_query, location="india", rows=60):
-    if not apify_client:
-        return [], "APIFY_API_TOKEN manquant..."
-    run_input = {
-            "title": search_query,
-            "location": location,
-            "rows": rows,
-            "proxy": {
-                "useApifyProxy": True,
-                "apifyProxyGroups": ["RESIDENTIAL"],
-            }
-        }
+    """
+    Free alternative using Remotive (remote jobs). We keep the function name for UI consistency.
+    """
     try:
-        run = apify_client.actor(LINKEDIN_ACTOR_ID).call(run_input=run_input)
-        jobs = list(apify_client.dataset(run["defaultDatasetId"]).iterate_items())
+        query = f"{search_query} {location}".strip()
+        response = requests.get(
+            "https://remotive.com/api/remote-jobs",
+            params={"search": query},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        jobs = []
+        for item in data.get("jobs", [])[:rows]:
+            jobs.append(
+                {
+                    "title": item.get("title"),
+                    "companyName": item.get("company_name"),
+                    "location": item.get("candidate_required_location") or "Remote",
+                    "link": item.get("url"),
+                }
+            )
         return jobs, None
-    except ApifyApiError as exc:
-        return [], f"LinkedIn: {exc}"
+    except requests.RequestException as exc:
+        return [], f"Remotive: erreur réseau ({exc})"
     except Exception as exc:
-        return [], f"LinkedIn: erreur inattendue ({exc})"
+        return [], f"Remotive: erreur inattendue ({exc})"
 
 
 # Fetch Naukri jobs based on search query and location
 def fetch_naukri_jobs(search_query, location="india", rows=60):
-    if not apify_client:
-        return [], "APIFY_API_TOKEN manquant..."
-    run_input = {
-        "keyword": search_query,
-        "maxJobs": 60,
-        "freshness": "all",
-        "sortBy": "relevance",
-        "experience": "all",
-    }
+    """
+    Free alternative using The Muse public API. Keeps name for UI consistency.
+    """
     try:
-        run = apify_client.actor(NAUKRI_ACTOR_ID).call(run_input=run_input)
-        jobs = list(apify_client.dataset(run["defaultDatasetId"]).iterate_items())
+        jobs = []
+        page = 1
+        while len(jobs) < rows and page <= 5:
+            params = {"page": page, "q": search_query}
+            if location:
+                params["location"] = location
+            response = requests.get(
+                "https://www.themuse.com/api/public/jobs",
+                params=params,
+                timeout=20,
+            )
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("results", [])
+            if not results:
+                break
+            for item in results:
+                locations = item.get("locations") or []
+                job_location = locations[0].get("name") if locations else ""
+                jobs.append(
+                    {
+                        "title": item.get("name"),
+                        "companyName": (item.get("company") or {}).get("name"),
+                        "location": job_location,
+                        "url": (item.get("refs") or {}).get("landing_page"),
+                    }
+                )
+                if len(jobs) >= rows:
+                    break
+            page += 1
         return jobs, None
-    except ApifyApiError as exc:
-        return [], f"Naukri: {exc}"
+    except requests.RequestException as exc:
+        return [], f"The Muse: erreur réseau ({exc})"
     except Exception as exc:
-        return [], f"Naukri: erreur inattendue ({exc})"
+        return [], f"The Muse: erreur inattendue ({exc})"
