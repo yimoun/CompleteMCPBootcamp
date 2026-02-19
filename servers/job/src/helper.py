@@ -1,16 +1,16 @@
 import fitz # PyMuPDF
 import os 
 from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq
 
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = Groq(api_key=GROQ_API_KEY)
 
 
 def extract_text_from_pdf(uploaded_file):
@@ -31,22 +31,22 @@ def extract_text_from_pdf(uploaded_file):
 
 
 
-def ask_openai(prompt, max_tokens=500):
+def ask_groq(prompt, max_tokens=500):
     """
-    Sends a prompt to the OpenAI API and returns the response.
+    Sends a prompt to the Groq API and returns the response.
     
     Args:
-        prompt (str): The prompt to send to the OpenAI API.
+        prompt (str): The prompt to send to the Groq API.
         model (str): The model to use for the request.
         temperature (float): The temperature for the response.
         
     Returns:
-        str: The response from the OpenAI API.
+        str: The response from the Groq API.
     """
     
 
     response = client.chat.completions.create(
-        model= "gpt-4o",
+        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         messages=[
             {
                 "role": "user",
