@@ -51,12 +51,15 @@ if uploaded_file:
         st.success(f"Extracted Job Keywords: {search_keywords_clean}")
 
         with st.spinner("Fetching jobs from LinkedIn and Naukri..."):
-            linkedin_jobs = fetch_linkedin_jobs(search_keywords_clean, rows=60)
-            naukri_jobs = fetch_naukri_jobs(search_keywords_clean, rows=60)
+            linkedin_jobs, linkedin_error = fetch_linkedin_jobs(search_keywords_clean, rows=60)
+            naukri_jobs, naukri_error = fetch_naukri_jobs(search_keywords_clean, rows=60)
 
 
         st.markdown("---")
         st.header("💼 Top LinkedIn Jobs")
+
+        if linkedin_error:
+            st.error(linkedin_error)
 
         if linkedin_jobs:
             for job in linkedin_jobs:
@@ -69,6 +72,9 @@ if uploaded_file:
 
         st.markdown("---")
         st.header("💼 Top Naukri Jobs (India)")
+
+        if naukri_error:
+            st.error(naukri_error)
 
         if naukri_jobs:
             for job in naukri_jobs:
