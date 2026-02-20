@@ -1,6 +1,17 @@
 import streamlit as st
+import streamlit.components.v1 as components
+from dotenv import load_dotenv
 from src.helper import extract_text_from_pdf, ask_groq
-from src.job_api import fetch_remote_jobs
+from src.job_api import fetch_remote_jobs, fetch_jooble_jobs
+from src.prompts import (
+    summary_prompt,
+    gaps_prompt,
+    roadmap_prompt,
+    roadmap_mermaid_prompt,
+    keywords_prompt,
+)
+
+load_dotenv()
 
 st.set_page_config(page_title="Job Recommender", layout="wide")
 st.title("📄AI Job Recommender")
@@ -9,19 +20,32 @@ st.markdown("Upload your resume and get job recommendations based on your skills
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 
 if uploaded_file:
+    def render_mermaid(mermaid_code: str) -> None:
+        html = f"""
+        <div class=\"mermaid\">{mermaid_code}</div>
+        <script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>
+        <script>
+        mermaid.initialize({{ startOnLoad: true, theme: 'dark' }});
+        </script>
+        """
+        components.html(html, height=520, scrolling=True)
+
     with st.spinner("Extracting text from your resume..."):
         resume_text = extract_text_from_pdf(uploaded_file)
 
     with st.spinner("Summarizing your resume..."):
-        summary = ask_groq(f"Summarize this resume highlighting the skills, edcucation, and experience: \n\n{resume_text}", max_tokens=500)
+        summary = ask_groq(summary_prompt(resume_text), max_tokens=500)
 
     
     with st.spinner("Finding skill Gaps..."):
-        gaps = ask_groq(f"Analyze this resume and highlight missing skills, certifications, and experiences needed for better job opportunities: \n\n{resume_text}", max_tokens=400)
+        gaps = ask_groq(gaps_prompt(resume_text), max_tokens=400)
 
 
     with st.spinner("Creating Future Roadmap..."):
-        roadmap = ask_groq(f"Based on this resume, suggest a future roadmap to improve this person's career prospects (Skill to learn, certification needed, industry exposure): \n\n{resume_text}", max_tokens=400)
+        roadmap = ask_groq(roadmap_prompt(resume_text), max_tokens=400)
+
+    with st.spinner("Creating Visual Roadmap..."):
+        roadmap_mermaid = ask_groq(roadmap_mermaid_prompt(resume_text), max_tokens=500)
     
     # Display nicely formatted results
     st.markdown("---")
@@ -36,6 +60,10 @@ if uploaded_file:
     st.header("🚀 Future Roadmap & Preparation Strategy")
     st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{roadmap}</div>", unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.header("🗺️ Visual Roadmap (Mermaid)")
+    render_mermaid(roadmap_mermaid)
+
     st.success("✅ Analysis Completed Successfully!")
 
 
@@ -45,6 +73,10 @@ if uploaded_file:
         st.session_state.linkedin_jobs = []
     if "linkedin_error" not in st.session_state:
         st.session_state.linkedin_error = None
+    if "jooble_jobs" not in st.session_state:
+        st.session_state.jooble_jobs = []
+    if "jooble_error" not in st.session_state:
+        st.session_state.jooble_error = None
 
     def fetch_jobs_only():
         if not st.session_state.job_keywords:
@@ -55,8 +87,15 @@ if uploaded_file:
                 location=st.session_state.location,
                 rows=60,
             )
+            jooble_jobs, jooble_error = fetch_jooble_jobs(
+                st.session_state.job_keywords,
+                location=st.session_state.location,
+                rows=60,
+            )
         st.session_state.linkedin_jobs = linkedin_jobs or []
         st.session_state.linkedin_error = linkedin_error
+        st.session_state.jooble_jobs = jooble_jobs or []
+        st.session_state.jooble_error = jooble_error
 
     col_location, col_button = st.columns([1, 2])
     with col_location:
@@ -72,12 +111,7 @@ if uploaded_file:
 
     if get_jobs_clicked:
         with st.spinner("Fetching job recommendations..."):
-            keywords = ask_groq(
-                "Based on this resume summary, suggest the best job titles and keywords for searching jobs. "
-                "Give a comma-separated list only, no explanation.\n\nSummary: "
-                f"{summary}",
-                max_tokens=100,
-            )
+            keywords = ask_groq(keywords_prompt(summary), max_tokens=100)
             st.session_state.job_keywords = keywords.replace("\n", "").strip()
 
         st.success(f"Extracted Job Keywords: {st.session_state.job_keywords}")
@@ -100,6 +134,21 @@ if uploaded_file:
                 st.markdown("---")
         else:
             st.warning("No Remotive jobs found.")
+
+        st.markdown("---")
+        st.header("💼 Jooble Jobs (Local/Location-based)")
+
+        if st.session_state.jooble_error:
+            st.error(st.session_state.jooble_error)
+
+        if st.session_state.jooble_jobs:
+            for job in st.session_state.jooble_jobs:
+                st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
+                st.markdown(f"- 📍 {job.get('location')}")
+                st.markdown(f"- 🔗 [View Job]({job.get('link')})")
+                st.markdown("---")
+        else:
+            st.warning("No Jooble jobs found.")
 
 
 
