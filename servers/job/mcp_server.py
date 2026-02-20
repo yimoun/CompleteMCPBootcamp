@@ -8,7 +8,7 @@ load_dotenv()
 mcp = FastMCP("Job Recommender")
 
 @mcp.tool()
-async def fetch_remote_jobs(listofkey):
+async def fetch_remote(listofkey):
     return fetch_remote_jobs(listofkey)
 
 
