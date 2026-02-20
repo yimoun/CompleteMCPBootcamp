@@ -1,5 +1,6 @@
 import fitz # PyMuPDF
 import os 
+import time
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -31,7 +32,7 @@ def extract_text_from_pdf(uploaded_file):
 
 
 
-def ask_groq(prompt, max_tokens=500):
+def ask_groq(prompt, max_tokens=500, retries=3, backoff=0.6):
     """
     Sends a prompt to the Groq API and returns the response.
     
@@ -45,18 +46,24 @@ def ask_groq(prompt, max_tokens=500):
     """
     
 
-    response = client.chat.completions.create(
-        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.5,
-        max_tokens=max_tokens
-    )
-
-    return response.choices[0].message.content
+    last_error = None
+    for attempt in range(retries):
+        try:
+            response = client.chat.completions.create(
+                model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.5,
+                max_tokens=max_tokens
+            )
+            return response.choices[0].message.content
+        except Exception as exc:
+            last_error = exc
+            time.sleep(backoff * (2 ** attempt))
+    raise last_error
 
 

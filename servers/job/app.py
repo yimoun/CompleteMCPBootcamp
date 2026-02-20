@@ -102,7 +102,7 @@ if uploaded_file:
                 rows=60,
             )
             jooble_jobs, jooble_error = fetch_jooble_jobs(
-                st.session_state.job_keywords,
+                st.session_state.get("jooble_keywords", st.session_state.job_keywords),
                 location=st.session_state.location,
                 rows=60,
             )
@@ -115,7 +115,7 @@ if uploaded_file:
     with col_location:
         st.text_input(
             "Preferred location (city/country)",
-            value="Worldwide",
+            value="Saguenay",
             key="location",
             on_change=fetch_jobs_only,
         )
@@ -126,43 +126,54 @@ if uploaded_file:
     if get_jobs_clicked:
         with st.spinner("Fetching job recommendations..."):
             keywords = ask_groq(keywords_prompt(summary), max_tokens=100)
-            st.session_state.job_keywords = keywords.replace("\n", "").strip()
+            search_keywords_clean = keywords.replace("\n", "").strip()
+            st.session_state.job_keywords = search_keywords_clean
+            st.session_state.jooble_keywords = " OR ".join(
+                [k.strip() for k in search_keywords_clean.split(",") if k.strip()]
+            )
 
         st.success(f"Extracted Job Keywords: {st.session_state.job_keywords}")
         fetch_jobs_only()
 
     if st.session_state.job_keywords:
         st.success(f"Extracted Job Keywords: {st.session_state.job_keywords}")
+        if "jooble_keywords" in st.session_state and st.session_state.jooble_keywords:
+            st.caption(f"Jooble query: {st.session_state.jooble_keywords}")
 
         st.markdown("---")
-        st.header("💼 Top Remotive Jobs (Remote)")
+        col_remote, col_local = st.columns(2)
 
-        if st.session_state.linkedin_error:
-            st.error(st.session_state.linkedin_error)
+        with col_remote:
+            st.subheader("💼 Top Remotive Jobs (Remote)")
+            remote_box = st.container(height=520)
+            with remote_box:
+                if st.session_state.linkedin_error:
+                    st.error(st.session_state.linkedin_error)
 
-        if st.session_state.linkedin_jobs:
-            for job in st.session_state.linkedin_jobs:
-                st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
-                st.markdown(f"- 📍 {job.get('location')}")
-                st.markdown(f"- 🔗 [View Job]({job.get('link')})")
-                st.markdown("---")
-        else:
-            st.warning("No Remotive jobs found.")
+                if st.session_state.linkedin_jobs:
+                    for job in st.session_state.linkedin_jobs:
+                        st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
+                        st.markdown(f"- 📍 {job.get('location')}")
+                        st.markdown(f"- 🔗 [View Job]({job.get('link')})")
+                        st.markdown("---")
+                else:
+                    st.warning("No Remotive jobs found.")
 
-        st.markdown("---")
-        st.header("💼 Jooble Jobs (Local/Location-based)")
+        with col_local:
+            st.subheader("💼 Jooble Jobs (Local/Location-based)")
+            local_box = st.container(height=520)
+            with local_box:
+                if st.session_state.jooble_error:
+                    st.error(st.session_state.jooble_error)
 
-        if st.session_state.jooble_error:
-            st.error(st.session_state.jooble_error)
-
-        if st.session_state.jooble_jobs:
-            for job in st.session_state.jooble_jobs:
-                st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
-                st.markdown(f"- 📍 {job.get('location')}")
-                st.markdown(f"- 🔗 [View Job]({job.get('link')})")
-                st.markdown("---")
-        else:
-            st.warning("No Jooble jobs found.")
+                if st.session_state.jooble_jobs:
+                    for job in st.session_state.jooble_jobs:
+                        st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
+                        st.markdown(f"- 📍 {job.get('location')}")
+                        st.markdown(f"- 🔗 [View Job]({job.get('link')})")
+                        st.markdown("---")
+                else:
+                    st.warning("No Jooble jobs found.")
 
 
 

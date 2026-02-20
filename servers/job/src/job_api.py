@@ -40,6 +40,7 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
     Location-based jobs using Jooble API. Requires JOOBLE_API_KEY.
     """
     api_key = os.getenv("JOOBLE_API_KEY")
+    debug = os.getenv("JOOBLE_DEBUG", "").lower() in {"1", "true", "yes"}
     if not api_key:
         return [], "Jooble: JOOBLE_API_KEY manquant."
 
@@ -47,20 +48,31 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
         jobs = []
         page = 1
         while len(jobs) < rows and page <= 3:
+            keywords = search_query or ""
+            if "," in keywords:
+                keywords = " OR ".join([k.strip() for k in keywords.split(",") if k.strip()])
             payload = {
-                "keywords": search_query,
+                "keywords": keywords,
                 "location": location or "",
                 "page": page,
             }
+            if debug:
+                print("[Jooble] Request payload:", payload)
             response = requests.post(
                 f"https://jooble.org/api/{api_key}",
                 json=payload,
                 timeout=20,
             )
+            if debug:
+                print("[Jooble] Status:", response.status_code)
             response.raise_for_status()
             data = response.json()
+            if debug:
+                print("[Jooble] Total:", data.get("totalCount"))
             results = data.get("jobs", [])
             if not results:
+                if debug:
+                    print("[Jooble] No results for", payload)
                 break
             for item in results:
                 jobs.append(
@@ -76,6 +88,10 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
             page += 1
         return jobs, None
     except requests.RequestException as exc:
-        return [], f"Jooble: erreur réseau ({exc})"
+        status = exc.response.status_code if exc.response else "n/a"
+        body = exc.response.text if exc.response else ""
+        if debug and body:
+            print("[Jooble] Error body:", body[:500])
+        return [], f"Jooble: erreur réseau ({status}) {body[:200]}"
     except Exception as exc:
         return [], f"Jooble: erreur inattendue ({exc})"
