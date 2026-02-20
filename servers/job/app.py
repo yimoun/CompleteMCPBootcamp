@@ -1,3 +1,6 @@
+import base64
+import zlib
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -20,15 +23,89 @@ st.markdown("Upload your resume and get job recommendations based on your skills
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 
 if uploaded_file:
-    def render_mermaid(mermaid_code: str) -> None:
-        html = f"""
-        <div class=\"mermaid\">{mermaid_code}</div>
-        <script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>
-        <script>
-        mermaid.initialize({{ startOnLoad: true, theme: 'dark' }});
-        </script>
-        """
-        components.html(html, height=520, scrolling=True)
+    def clean_mermaid_code(raw: str) -> str:
+        if not raw:
+            return ""
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.replace("mermaid", "", 1).strip()
+        text = text.replace("-->|", "--|").replace("|>", "|-->")
+        return text
+
+    def normalize_mermaid(raw: str) -> str:
+        template = {
+            "A1": "Skill 1",
+            "A2": "Certification 1",
+            "A3": "Project 1",
+            "A4": "Milestone 1",
+            "B1": "Skill 2",
+            "B2": "Certification 2",
+            "B3": "Project 2",
+            "B4": "Milestone 2",
+            "B5": "Experience 1",
+            "B6": "Outcome 1",
+            "C1": "Skill 3",
+            "C2": "Certification 3",
+            "C3": "Project 3",
+            "C4": "Milestone 3",
+            "C5": "Networking 1",
+            "C6": "Outcome 2",
+        }
+        for line in (raw or "").splitlines():
+            line = line.strip()
+            if not line or "[" not in line or "]" not in line:
+                continue
+            for key in template.keys():
+                if line.startswith(f"{key}["):
+                    label = line.split("[", 1)[1].rsplit("]", 1)[0]
+                    label = label.replace("[", "").replace("]", "").strip()
+                    label = label[:50]
+                    if label:
+                        template[key] = label
+        return (
+            "graph LR\n"
+            "  subgraph 0-3 months\n"
+            f"    A1[{template['A1']}] --> A2[{template['A2']}]\n"
+            f"    A3[{template['A3']}] --> A4[{template['A4']}]\n"
+            "  end\n"
+            "  subgraph 3-6 months\n"
+            f"    B1[{template['B1']}] --> B2[{template['B2']}]\n"
+            f"    B3[{template['B3']}] --> B4[{template['B4']}]\n"
+            f"    B5[{template['B5']}] --> B6[{template['B6']}]\n"
+            "  end\n"
+            "  subgraph 6-12 months\n"
+            f"    C1[{template['C1']}] --> C2[{template['C2']}]\n"
+            f"    C3[{template['C3']}] --> C4[{template['C4']}]\n"
+            f"    C5[{template['C5']}] --> C6[{template['C6']}]\n"
+            "  end\n"
+            "  A2 --> B1\n"
+            "  A4 --> B3\n"
+            "  B2 --> C1\n"
+            "  B4 --> C3\n"
+            "  B6 --> C5\n"
+        )
+
+    def mermaid_image_url(mermaid_code: str) -> str:
+        compressor = zlib.compressobj(level=9, wbits=-15)
+        compressed = compressor.compress(mermaid_code.encode("utf-8")) + compressor.flush()
+        payload = base64.urlsafe_b64encode(compressed).decode("utf-8").rstrip("=")
+        return f"https://mermaid.ink/svg/{payload}"
+
+    def render_mermaid_svg(mermaid_code: str) -> None:
+        try:
+            response = requests.post(
+                "https://kroki.io/mermaid/svg",
+                data=mermaid_code.encode("utf-8"),
+                headers={"Content-Type": "text/plain"},
+                timeout=15,
+            )
+            response.raise_for_status()
+            components.html(response.text, height=520, scrolling=True)
+        except requests.RequestException as exc:
+            st.warning(f"Mermaid render fallback: {exc}")
+            st.image(mermaid_image_url(mermaid_code), use_container_width=True)
+
 
     with st.spinner("Extracting text from your resume..."):
         resume_text = extract_text_from_pdf(uploaded_file)
@@ -46,6 +123,10 @@ if uploaded_file:
 
     with st.spinner("Creating Visual Roadmap..."):
         roadmap_mermaid = ask_groq(roadmap_mermaid_prompt(resume_text), max_tokens=500)
+        roadmap_mermaid = normalize_mermaid(clean_mermaid_code(roadmap_mermaid))
+        if roadmap_mermaid:
+            print("[Mermaid Roadmap]\n", roadmap_mermaid)
+            print("[Mermaid Image URL]\n", mermaid_image_url(roadmap_mermaid))
     
     # Display nicely formatted results
     st.markdown("---")
@@ -62,7 +143,10 @@ if uploaded_file:
 
     st.markdown("---")
     st.header("🗺️ Visual Roadmap (Mermaid)")
-    render_mermaid(roadmap_mermaid)
+    if roadmap_mermaid:
+        render_mermaid_svg(roadmap_mermaid)
+    else:
+        st.warning("Mermaid vide. Vérifie le prompt ou la réponse du modèle.")
 
     st.success("✅ Analysis Completed Successfully!")
 

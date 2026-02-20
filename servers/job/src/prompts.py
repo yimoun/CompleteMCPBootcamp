@@ -23,9 +23,29 @@ def roadmap_prompt(resume_text: str) -> str:
 
 def roadmap_mermaid_prompt(resume_text: str) -> str:
     return (
-        "Generate a Mermaid flowchart roadmap with phases (0-3 months, 3-6 months, 6-12 months). "
-        "Use nodes for skills, certifications, projects, and milestones. Keep it concise. "
-        "Output only Mermaid code.\n\n"
+        "Generate a Mermaid flowchart roadmap with EXACT structure and consistent node IDs. "
+        "Use this skeleton and ONLY replace the text inside brackets [] (keep IDs):\n"
+        "graph LR\n"
+        "  subgraph 0-3 months\n"
+        "    A1[Skill 1] --> A2[Certification 1]\n"
+        "    A3[Project 1] --> A4[Milestone 1]\n"
+        "  end\n"
+        "  subgraph 3-6 months\n"
+        "    B1[Skill 2] --> B2[Certification 2]\n"
+        "    B3[Project 2] --> B4[Milestone 2]\n"
+        "    B5[Experience 1] --> B6[Outcome 1]\n"
+        "  end\n"
+        "  subgraph 6-12 months\n"
+        "    C1[Skill 3] --> C2[Certification 3]\n"
+        "    C3[Project 3] --> C4[Milestone 3]\n"
+        "    C5[Networking 1] --> C6[Outcome 2]\n"
+        "  end\n"
+        "  A2 --> B1\n"
+        "  A4 --> B3\n"
+        "  B2 --> C1\n"
+        "  B4 --> C3\n"
+        "  B6 --> C5\n"
+        "Rules: keep IDs, no quotes, no edge labels, output ONLY Mermaid code.\n\n"
         f"Resume:\n{resume_text}"
     )
 
