@@ -50,6 +50,28 @@ def roadmap_mermaid_prompt(resume_text: str) -> str:
     )
 
 
+def roadmap_mermaid_labels_prompt(resume_text: str) -> str:
+    return (
+        "Extract concrete roadmap labels from this resume. Return JSON ONLY with keys "
+        "A1,A2,A3,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6. "
+        "Each value must be a short, specific label (no placeholders like 'Skill 1'). "
+        "If missing, invent a reasonable, resume-relevant item. "
+        "No extra keys, no markdown.\n\nResume:\n"
+        f"{resume_text}"
+    )
+
+
+def roadmap_mermaid_labels_from_roadmap_prompt(roadmap_text: str) -> str:
+    return (
+        "Extract concrete roadmap labels from this roadmap text. Return JSON ONLY with keys "
+        "A1,A2,A3,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6. "
+        "Each value must be a short, specific label (no placeholders like 'Skill 1'). "
+        "If missing, invent a reasonable, roadmap-consistent item. "
+        "No extra keys, no markdown.\n\nRoadmap:\n"
+        f"{roadmap_text}"
+    )
+
+
 def keywords_prompt(summary_text: str) -> str:
     return (
         "Based on this resume summary, suggest the best job titles and keywords for searching jobs. "

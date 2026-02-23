@@ -1,3 +1,5 @@
+import json
+import re
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -9,9 +11,16 @@ from src.prompts import (
     gaps_prompt,
     roadmap_prompt,
     roadmap_mermaid_prompt,
+    roadmap_mermaid_labels_prompt,
+    roadmap_mermaid_labels_from_roadmap_prompt,
     keywords_prompt,
 )
-from src.ui_helpers import clean_mermaid_code, normalize_mermaid, mermaid_image_url
+from src.ui_helpers import (
+    build_mermaid_from_labels,
+    clean_mermaid_code,
+    normalize_mermaid,
+    mermaid_image_url,
+)
 
 load_dotenv()
 
@@ -22,6 +31,36 @@ st.markdown("Upload your resume and get job recommendations based on your skills
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 
 if uploaded_file:
+    def extract_json_object(text: str) -> str:
+        if not text:
+            return ""
+        match = re.search(r"\{[\s\S]*\}", text)
+        return match.group(0) if match else ""
+
+    def labels_have_placeholders(labels: dict) -> bool:
+        placeholders = {
+            "Skill 1",
+            "Skill 2",
+            "Skill 3",
+            "Certification 1",
+            "Certification 2",
+            "Certification 3",
+            "Project 1",
+            "Project 2",
+            "Project 3",
+            "Milestone 1",
+            "Milestone 2",
+            "Milestone 3",
+            "Experience 1",
+            "Outcome 1",
+            "Outcome 2",
+            "Networking 1",
+        }
+        for value in labels.values():
+            if isinstance(value, str) and value.strip() in placeholders:
+                return True
+        return False
+
     def render_mermaid_svg(mermaid_code: str) -> None:
         try:
             response = requests.post(
@@ -52,8 +91,27 @@ if uploaded_file:
         roadmap = ask_groq(roadmap_prompt(resume_text), max_tokens=400)
 
     with st.spinner("Creating Visual Roadmap..."):
-        roadmap_mermaid = ask_groq(roadmap_mermaid_prompt(resume_text), max_tokens=500)
-        roadmap_mermaid = normalize_mermaid(clean_mermaid_code(roadmap_mermaid))
+        labels_prompt = roadmap_mermaid_labels_from_roadmap_prompt(roadmap)
+        labels_raw = ask_groq(labels_prompt, max_tokens=500)
+        labels_json = extract_json_object(labels_raw)
+        labels = {}
+        if labels_json:
+            try:
+                labels = json.loads(labels_json)
+            except json.JSONDecodeError:
+                labels = {}
+
+        labels_used = bool(labels and not labels_have_placeholders(labels))
+        if labels_used:
+            roadmap_mermaid_raw = ""
+            roadmap_mermaid_clean = ""
+            roadmap_mermaid = build_mermaid_from_labels(labels)
+            mermaid_prompt = labels_prompt
+        else:
+            mermaid_prompt = roadmap_mermaid_prompt(resume_text)
+            roadmap_mermaid_raw = ask_groq(mermaid_prompt, max_tokens=500)
+            roadmap_mermaid_clean = clean_mermaid_code(roadmap_mermaid_raw)
+            roadmap_mermaid = normalize_mermaid(roadmap_mermaid_clean)
         if roadmap_mermaid:
             print("[Mermaid Roadmap]\n", roadmap_mermaid)
             print("[Mermaid Image URL]\n", mermaid_image_url(roadmap_mermaid))
@@ -77,6 +135,20 @@ if uploaded_file:
         render_mermaid_svg(roadmap_mermaid)
     else:
         st.warning("Mermaid vide. Vérifie le prompt ou la réponse du modèle.")
+
+    with st.expander("🔎 Debug Mermaid", expanded=False):
+        st.caption("Ces infos aident à voir pourquoi les labels ne sont pas remplacés.")
+        st.text(f"resume_text length: {len(resume_text or '')}")
+        st.text(f"labels_used: {labels_used}")
+        st.text_area("resume_text (début)", (resume_text or "")[:800], height=160)
+        st.text_area("labels_prompt", labels_prompt, height=240)
+        st.text_area("labels_raw", labels_raw or "", height=240)
+        st.text_area("labels_json", labels_json or "", height=200)
+        st.text_area("roadmap_mermaid_prompt", mermaid_prompt, height=260)
+        st.text_area("ask_groq raw output", roadmap_mermaid_raw or "", height=260)
+        st.text_area("clean_mermaid_code output", roadmap_mermaid_clean or "", height=220)
+        st.text_area("normalize_mermaid output", roadmap_mermaid or "", height=220)
+        st.code(roadmap_mermaid or "", language="mermaid")
 
     st.success("✅ Analysis Completed Successfully!")
 
