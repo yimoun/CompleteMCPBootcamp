@@ -17,13 +17,12 @@ def _extract_json(text: str) -> Any:
     except json.JSONDecodeError:
         pass
 
-    match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", text)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return None
+    for match in re.finditer(r"(\{[\s\S]*?\}|\[[\s\S]*?\])", text):
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 def extract_resume_profile(resume_text: str) -> Dict[str, Any]:

@@ -8,10 +8,9 @@ def clean_mermaid_code(raw: str) -> str:
     if not raw:
         return ""
     text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        text = text.replace("mermaid", "", 1).strip()
-    text = text.replace("-->|", "--|").replace("|>", "|-->")
+    text = re.sub(r"^```\s*mermaid\s*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    text = text.strip()
     return text
 
 
