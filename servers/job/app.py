@@ -1,5 +1,6 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -79,16 +80,14 @@ if uploaded_file:
     with st.spinner("Extracting text from your resume..."):
         resume_text = extract_text_from_pdf(uploaded_file)
 
-    with st.spinner("Summarizing your resume..."):
-        summary = ask_groq(summary_prompt(resume_text), max_tokens=500)
-
-    
-    with st.spinner("Finding skill Gaps..."):
-        gaps = ask_groq(gaps_prompt(resume_text), max_tokens=400)
-
-
-    with st.spinner("Creating Future Roadmap..."):
-        roadmap = ask_groq(roadmap_prompt(resume_text), max_tokens=400)
+    with st.spinner("Analyzing your resume (summary, gaps, roadmap)..."):
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            future_summary = pool.submit(ask_groq, summary_prompt(resume_text), 500)
+            future_gaps = pool.submit(ask_groq, gaps_prompt(resume_text), 400)
+            future_roadmap = pool.submit(ask_groq, roadmap_prompt(resume_text), 400)
+        summary = future_summary.result()
+        gaps = future_gaps.result()
+        roadmap = future_roadmap.result()
 
     with st.spinner("Creating Visual Roadmap..."):
         labels_prompt = roadmap_mermaid_labels_from_roadmap_prompt(roadmap)

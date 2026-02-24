@@ -45,12 +45,15 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
         return [], "Jooble: JOOBLE_API_KEY manquant."
 
     try:
+        keywords = search_query or ""
+        if "," in keywords:
+            keywords = " OR ".join([k.strip() for k in keywords.split(",") if k.strip()])
+        url = f"https://jooble.org/api/{api_key}"
+
         jobs = []
         page = 1
+        session = requests.Session()
         while len(jobs) < rows and page <= 3:
-            keywords = search_query or ""
-            if "," in keywords:
-                keywords = " OR ".join([k.strip() for k in keywords.split(",") if k.strip()])
             payload = {
                 "keywords": keywords,
                 "location": location or "",
@@ -58,11 +61,7 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
             }
             if debug:
                 print("[Jooble] Request payload:", payload)
-            response = requests.post(
-                f"https://jooble.org/api/{api_key}",
-                json=payload,
-                timeout=20,
-            )
+            response = session.post(url, json=payload, timeout=20)
             if debug:
                 print("[Jooble] Status:", response.status_code)
             response.raise_for_status()
