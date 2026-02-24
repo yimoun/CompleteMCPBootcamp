@@ -4,6 +4,51 @@ import zlib
 from typing import Dict
 
 
+DEFAULT_LABELS: Dict[str, str] = {
+    "A1": "Skill 1",
+    "A2": "Certification 1",
+    "A3": "Project 1",
+    "A4": "Milestone 1",
+    "B1": "Skill 2",
+    "B2": "Certification 2",
+    "B3": "Project 2",
+    "B4": "Milestone 2",
+    "B5": "Experience 1",
+    "B6": "Outcome 1",
+    "C1": "Skill 3",
+    "C2": "Certification 3",
+    "C3": "Project 3",
+    "C4": "Milestone 3",
+    "C5": "Networking 1",
+    "C6": "Outcome 2",
+}
+
+
+def _render_mermaid(labels: Dict[str, str]) -> str:
+    return (
+        "graph LR\n"
+        "  subgraph 0-3 months\n"
+        f"    A1[{labels['A1']}] --> A2[{labels['A2']}]\n"
+        f"    A3[{labels['A3']}] --> A4[{labels['A4']}]\n"
+        "  end\n"
+        "  subgraph 3-6 months\n"
+        f"    B1[{labels['B1']}] --> B2[{labels['B2']}]\n"
+        f"    B3[{labels['B3']}] --> B4[{labels['B4']}]\n"
+        f"    B5[{labels['B5']}] --> B6[{labels['B6']}]\n"
+        "  end\n"
+        "  subgraph 6-12 months\n"
+        f"    C1[{labels['C1']}] --> C2[{labels['C2']}]\n"
+        f"    C3[{labels['C3']}] --> C4[{labels['C4']}]\n"
+        f"    C5[{labels['C5']}] --> C6[{labels['C6']}]\n"
+        "  end\n"
+        "  A2 --> B1\n"
+        "  A4 --> B3\n"
+        "  B2 --> C1\n"
+        "  B4 --> C3\n"
+        "  B6 --> C5\n"
+    )
+
+
 def clean_mermaid_code(raw: str) -> str:
     if not raw:
         return ""
@@ -15,24 +60,7 @@ def clean_mermaid_code(raw: str) -> str:
 
 
 def normalize_mermaid(raw: str) -> str:
-    template: Dict[str, str] = {
-        "A1": "Skill 1",
-        "A2": "Certification 1",
-        "A3": "Project 1",
-        "A4": "Milestone 1",
-        "B1": "Skill 2",
-        "B2": "Certification 2",
-        "B3": "Project 2",
-        "B4": "Milestone 2",
-        "B5": "Experience 1",
-        "B6": "Outcome 1",
-        "C1": "Skill 3",
-        "C2": "Certification 3",
-        "C3": "Project 3",
-        "C4": "Milestone 3",
-        "C5": "Networking 1",
-        "C6": "Outcome 2",
-    }
+    template = dict(DEFAULT_LABELS)
     if raw:
         key_pattern = "|".join(map(re.escape, template.keys()))
         node_pattern = re.compile(
@@ -49,76 +77,17 @@ def normalize_mermaid(raw: str) -> str:
                 label = label[:50]
                 if label:
                     template[key] = label
-    return (
-        "graph LR\n"
-        "  subgraph 0-3 months\n"
-        f"    A1[{template['A1']}] --> A2[{template['A2']}]\n"
-        f"    A3[{template['A3']}] --> A4[{template['A4']}]\n"
-        "  end\n"
-        "  subgraph 3-6 months\n"
-        f"    B1[{template['B1']}] --> B2[{template['B2']}]\n"
-        f"    B3[{template['B3']}] --> B4[{template['B4']}]\n"
-        f"    B5[{template['B5']}] --> B6[{template['B6']}]\n"
-        "  end\n"
-        "  subgraph 6-12 months\n"
-        f"    C1[{template['C1']}] --> C2[{template['C2']}]\n"
-        f"    C3[{template['C3']}] --> C4[{template['C4']}]\n"
-        f"    C5[{template['C5']}] --> C6[{template['C6']}]\n"
-        "  end\n"
-        "  A2 --> B1\n"
-        "  A4 --> B3\n"
-        "  B2 --> C1\n"
-        "  B4 --> C3\n"
-        "  B6 --> C5\n"
-    )
+    return _render_mermaid(template)
 
 
 def build_mermaid_from_labels(labels: Dict[str, str]) -> str:
-    template: Dict[str, str] = {
-        "A1": "Skill 1",
-        "A2": "Certification 1",
-        "A3": "Project 1",
-        "A4": "Milestone 1",
-        "B1": "Skill 2",
-        "B2": "Certification 2",
-        "B3": "Project 2",
-        "B4": "Milestone 2",
-        "B5": "Experience 1",
-        "B6": "Outcome 1",
-        "C1": "Skill 3",
-        "C2": "Certification 3",
-        "C3": "Project 3",
-        "C4": "Milestone 3",
-        "C5": "Networking 1",
-        "C6": "Outcome 2",
-    }
+    template = dict(DEFAULT_LABELS)
     for key, value in (labels or {}).items():
         if key in template and isinstance(value, str):
             label = value.strip().strip("\"'")[:50]
             if label:
                 template[key] = label
-    return (
-        "graph LR\n"
-        "  subgraph 0-3 months\n"
-        f"    A1[{template['A1']}] --> A2[{template['A2']}]\n"
-        f"    A3[{template['A3']}] --> A4[{template['A4']}]\n"
-        "  end\n"
-        "  subgraph 3-6 months\n"
-        f"    B1[{template['B1']}] --> B2[{template['B2']}]\n"
-        f"    B3[{template['B3']}] --> B4[{template['B4']}]\n"
-        f"    B5[{template['B5']}] --> B6[{template['B6']}]\n"
-        "  end\n"
-        "  subgraph 6-12 months\n"
-        f"    C1[{template['C1']}] --> C2[{template['C2']}]\n"
-        f"    C3[{template['C3']}] --> C4[{template['C4']}]\n"
-        f"    C5[{template['C5']}] --> C6[{template['C6']}]\n"
-        "  end\n"
-        "  A2 --> B1\n"
-        "  A4 --> B3\n"
-        "  B2 --> C1\n"
-        "  B4 --> C3\n"
-        "  B6 --> C5\n"
-    )
+    return _render_mermaid(template)
 
 
 def mermaid_image_url(mermaid_code: str) -> str:

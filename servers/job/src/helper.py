@@ -57,7 +57,7 @@ def ask_groq(prompt, max_tokens=500, retries=3, backoff=0.6):
                 temperature=0.5,
                 max_tokens=max_tokens
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as exc:
             last_error = exc
             time.sleep(backoff * (2 ** attempt))

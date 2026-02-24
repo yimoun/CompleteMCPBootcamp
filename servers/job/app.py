@@ -1,3 +1,4 @@
+import html
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -29,7 +30,12 @@ st.set_page_config(page_title="Job Recommender", layout="wide")
 st.title("📄AI Job Recommender")
 st.markdown("Upload your resume and get job recommendations based on your skills and experience from free job APIs.")
 
+MAX_PDF_SIZE_MB = 10
 uploaded_file = st.file_uploader("Upload your resume (PDF)", type=["pdf"])
+
+if uploaded_file and uploaded_file.size > MAX_PDF_SIZE_MB * 1024 * 1024:
+    st.error(f"File too large ({uploaded_file.size // 1024 // 1024} MB). Maximum is {MAX_PDF_SIZE_MB} MB.")
+    uploaded_file = None
 
 if uploaded_file:
     def extract_json_object(text: str) -> str:
@@ -40,26 +46,17 @@ if uploaded_file:
 
     def labels_have_placeholders(labels: dict) -> bool:
         placeholders = {
-            "Skill 1",
-            "Skill 2",
-            "Skill 3",
-            "Certification 1",
-            "Certification 2",
-            "Certification 3",
-            "Project 1",
-            "Project 2",
-            "Project 3",
-            "Milestone 1",
-            "Milestone 2",
-            "Milestone 3",
-            "Experience 1",
-            "Outcome 1",
-            "Outcome 2",
-            "Networking 1",
+            "skill 1", "skill 2", "skill 3",
+            "certification 1", "certification 2", "certification 3",
+            "project 1", "project 2", "project 3",
+            "milestone 1", "milestone 2", "milestone 3",
+            "experience 1", "outcome 1", "outcome 2", "networking 1",
         }
         for value in labels.values():
-            if isinstance(value, str) and value.strip() in placeholders:
-                return True
+            if isinstance(value, str):
+                normalized = " ".join(value.lower().split())
+                if normalized in placeholders:
+                    return True
         return False
 
     def render_mermaid_svg(mermaid_code: str) -> None:
@@ -118,15 +115,15 @@ if uploaded_file:
     # Display nicely formatted results
     st.markdown("---")
     st.header("📑 Resume Summary")
-    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{summary}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{html.escape(summary or '')}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🛠️ Skill Gaps & Missing Areas")
-    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{gaps}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{html.escape(gaps or '')}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🚀 Future Roadmap & Preparation Strategy")
-    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{roadmap}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background-color: #000000; padding: 15px; border-radius: 10px; font-size:16px; color:white;'>{html.escape(roadmap or '')}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🗺️ Visual Roadmap (Mermaid)")
