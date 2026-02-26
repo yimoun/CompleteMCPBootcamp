@@ -7,7 +7,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from src.helper import extract_text_from_pdf, ask_groq
-from src.job_api import fetch_remote_jobs, fetch_jooble_jobs
+from src.job_api import fetch_remote_jobs, fetch_jooble_jobs, fetch_jsearch_jobs
+from src.ai_tools import classify_jobs
 from src.prompts import (
     summary_prompt,
     gaps_prompt,
@@ -159,25 +160,137 @@ if uploaded_file:
         st.session_state.jooble_jobs = []
     if "jooble_error" not in st.session_state:
         st.session_state.jooble_error = None
+    if "jsearch_jobs" not in st.session_state:
+        st.session_state.jsearch_jobs = []
+    if "jsearch_error" not in st.session_state:
+        st.session_state.jsearch_error = None
+    if "classified_remote" not in st.session_state:
+        st.session_state.classified_remote = []
+    if "classified_presentiel" not in st.session_state:
+        st.session_state.classified_presentiel = []
+    if "classification_error" not in st.session_state:
+        st.session_state.classification_error = None
 
     def fetch_jobs_only():
         if not st.session_state.job_keywords:
             return
-        with st.spinner("Fetching jobs from free job APIs..."):
-            linkedin_jobs, linkedin_error = fetch_remote_jobs(
-                st.session_state.job_keywords,
-                location=st.session_state.location,
-                rows=60,
-            )
-            jooble_jobs, jooble_error = fetch_jooble_jobs(
-                st.session_state.get("jooble_keywords", st.session_state.job_keywords),
-                location=st.session_state.location,
-                rows=60,
-            )
-        st.session_state.linkedin_jobs = linkedin_jobs or []
-        st.session_state.linkedin_error = linkedin_error
+        location = st.session_state.location
+
+        keywords_list = [k.strip() for k in st.session_state.job_keywords.split(",") if k.strip()]
+
+        with st.spinner("Fetching jobs from Remotive, Jooble, and JSearch..."):
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                # Remotive = remote jobs, NO location (adding a city kills results)
+                future_remotive = pool.submit(
+                    fetch_remote_jobs,
+                    st.session_state.job_keywords,
+                    location="",
+                    rows=20,
+                )
+                # Jooble = location-based
+                future_jooble = pool.submit(
+                    fetch_jooble_jobs,
+                    st.session_state.get("jooble_keywords", st.session_state.job_keywords),
+                    location=location,
+                    rows=20,
+                )
+                # JSearch = one call PER keyword for broad coverage
+                jsearch_futures = [
+                    pool.submit(fetch_jsearch_jobs, kw, location=location, rows=10)
+                    for kw in keywords_list[:3]
+                ]
+
+            remotive_jobs, remotive_err = future_remotive.result()
+            jooble_jobs, jooble_err = future_jooble.result()
+
+            # Merge all JSearch results
+            jsearch_jobs = []
+            jsearch_errors = []
+            for fut in jsearch_futures:
+                jobs_batch, err = fut.result()
+                jsearch_jobs.extend(jobs_batch or [])
+                if err:
+                    jsearch_errors.append(err)
+            jsearch_err = jsearch_errors[0] if jsearch_errors else None
+
+        st.session_state.linkedin_jobs = remotive_jobs or []
+        st.session_state.linkedin_error = remotive_err
         st.session_state.jooble_jobs = jooble_jobs or []
-        st.session_state.jooble_error = jooble_error
+        st.session_state.jooble_error = jooble_err
+        st.session_state.jsearch_jobs = jsearch_jobs or []
+        st.session_state.jsearch_error = jsearch_err
+
+        # Store raw data for debug
+        st.session_state._debug_remotive = {"jobs": remotive_jobs or [], "error": remotive_err}
+        st.session_state._debug_jooble = {"jobs": jooble_jobs or [], "error": jooble_err}
+        st.session_state._debug_jsearch = {"jobs": jsearch_jobs or [], "error": jsearch_err}
+
+        # Merge all jobs
+        all_jobs = (remotive_jobs or []) + (jooble_jobs or []) + (jsearch_jobs or [])
+
+        if not all_jobs:
+            st.session_state.classified_remote = []
+            st.session_state.classified_presentiel = []
+            st.session_state.classification_error = "Aucun emploi trouve."
+            return
+
+        # Deduplicate by (title, company)
+        seen = set()
+        unique_jobs = []
+        for job in all_jobs:
+            key = (
+                (job.get("title") or "").lower().strip(),
+                (job.get("companyName") or "").lower().strip(),
+            )
+            if key not in seen:
+                seen.add(key)
+                unique_jobs.append(job)
+
+        # LLM classification
+        with st.spinner("Classification des offres (Remote vs Presentiel)..."):
+            result = classify_jobs(summary, unique_jobs, user_location=location)
+
+        def _is_remote_category(cat):
+            return (cat or "").strip().lower() == "remote"
+
+        def _heuristic_classify(jobs):
+            remote_list, presentiel_list = [], []
+            for job in jobs:
+                loc = (job.get("location") or "").lower()
+                is_remote = job.get("_is_remote", False)
+                if is_remote or "remote" in loc or "anywhere" in loc or "worldwide" in loc:
+                    remote_list.append({**job, "category": "Remote", "relevance": ""})
+                else:
+                    presentiel_list.append({**job, "category": "Presentiel", "relevance": ""})
+            return remote_list, presentiel_list
+
+        st.session_state._classify_debug = result  # for debug expander
+
+        if "error" in result:
+            st.session_state.classification_error = (
+                "Classification LLM echouee, fallback heuristique utilise."
+            )
+            r, p = _heuristic_classify(unique_jobs)
+            st.session_state.classified_remote = r
+            st.session_state.classified_presentiel = p
+        else:
+            classified = result.get("classified_jobs", [])
+            if not classified:
+                # LLM returned valid JSON but empty list — use heuristic
+                st.session_state.classification_error = (
+                    "LLM a retourne une liste vide, fallback heuristique utilise."
+                )
+                r, p = _heuristic_classify(unique_jobs)
+                st.session_state.classified_remote = r
+                st.session_state.classified_presentiel = p
+            else:
+                st.session_state.classified_remote = [
+                    j for j in classified if _is_remote_category(j.get("category"))
+                ]
+                st.session_state.classified_presentiel = [
+                    j for j in classified if not _is_remote_category(j.get("category"))
+                ]
+                st.session_state.classification_error = None
 
     col_location, col_button = st.columns([1, 2])
     with col_location:
@@ -208,40 +321,108 @@ if uploaded_file:
         if "jooble_keywords" in st.session_state and st.session_state.jooble_keywords:
             st.caption(f"Jooble query: {st.session_state.jooble_keywords}")
 
+        # Show per-source fetch errors as non-blocking warnings
+        for err_key in ("linkedin_error", "jooble_error", "jsearch_error"):
+            err = st.session_state.get(err_key)
+            if err:
+                st.warning(err)
+
+        if st.session_state.classification_error:
+            st.warning(st.session_state.classification_error)
+
+        # Source counts
+        remotive_count = len(st.session_state.linkedin_jobs)
+        jooble_count = len(st.session_state.jooble_jobs)
+        jsearch_count = len(st.session_state.jsearch_jobs)
+        st.caption(
+            f"Sources: Remotive ({remotive_count}), "
+            f"Jooble ({jooble_count}), JSearch ({jsearch_count})"
+        )
+
+        with st.expander("🔎 Debug Classification", expanded=False):
+            st.text(f"classified_remote count: {len(st.session_state.classified_remote)}")
+            st.text(f"classified_presentiel count: {len(st.session_state.classified_presentiel)}")
+
+            st.subheader("Remotive (raw)")
+            debug_remotive = st.session_state.get("_debug_remotive", {})
+            if debug_remotive.get("error"):
+                st.error(debug_remotive["error"])
+            st.text_area(
+                f"remotive_jobs ({len(debug_remotive.get('jobs', []))} jobs)",
+                json.dumps(debug_remotive.get("jobs", [])[:5], indent=2, ensure_ascii=False),
+                height=200,
+            )
+
+            st.subheader("Jooble (raw)")
+            debug_jooble = st.session_state.get("_debug_jooble", {})
+            if debug_jooble.get("error"):
+                st.error(debug_jooble["error"])
+            st.text_area(
+                f"jooble_jobs ({len(debug_jooble.get('jobs', []))} jobs)",
+                json.dumps(debug_jooble.get("jobs", [])[:5], indent=2, ensure_ascii=False),
+                height=200,
+            )
+
+            st.subheader("JSearch (raw)")
+            debug_jsearch = st.session_state.get("_debug_jsearch", {})
+            if debug_jsearch.get("error"):
+                st.error(debug_jsearch["error"])
+            st.text_area(
+                f"jsearch_jobs ({len(debug_jsearch.get('jobs', []))} jobs)",
+                json.dumps(debug_jsearch.get("jobs", [])[:5], indent=2, ensure_ascii=False),
+                height=200,
+            )
+
+            st.subheader("LLM Classification result")
+            debug_classify = st.session_state.get("_classify_debug", {})
+            st.text_area(
+                "classify_jobs() return value",
+                json.dumps(debug_classify, indent=2, ensure_ascii=False)[:4000]
+                if isinstance(debug_classify, (dict, list))
+                else str(debug_classify)[:4000],
+                height=300,
+            )
+
         st.markdown("---")
         col_remote, col_local = st.columns(2)
 
         with col_remote:
-            st.subheader("💼 Top Remotive Jobs (Remote)")
+            st.subheader("🌐 Remote")
             remote_box = st.container(height=520)
             with remote_box:
-                if st.session_state.linkedin_error:
-                    st.error(st.session_state.linkedin_error)
-
-                if st.session_state.linkedin_jobs:
-                    for job in st.session_state.linkedin_jobs:
-                        st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
+                if st.session_state.classified_remote:
+                    for job in st.session_state.classified_remote:
+                        source = job.get("_source") or job.get("source", "")
+                        st.markdown(
+                            f"**{job.get('title')}** at *{job.get('companyName')}*"
+                            f"  `[{source}]`"
+                        )
                         st.markdown(f"- 📍 {job.get('location')}")
+                        if job.get("relevance"):
+                            st.markdown(f"- 💡 {job.get('relevance')}")
                         st.markdown(f"- 🔗 [View Job]({job.get('link')})")
                         st.markdown("---")
                 else:
-                    st.warning("No Remotive jobs found.")
+                    st.warning("Aucun emploi remote trouve.")
 
         with col_local:
-            st.subheader("💼 Jooble Jobs (Local/Location-based)")
+            st.subheader("🏢 Presentiel")
             local_box = st.container(height=520)
             with local_box:
-                if st.session_state.jooble_error:
-                    st.error(st.session_state.jooble_error)
-
-                if st.session_state.jooble_jobs:
-                    for job in st.session_state.jooble_jobs:
-                        st.markdown(f"**{job.get('title')}** at *{job.get('companyName')}*")
+                if st.session_state.classified_presentiel:
+                    for job in st.session_state.classified_presentiel:
+                        source = job.get("_source") or job.get("source", "")
+                        st.markdown(
+                            f"**{job.get('title')}** at *{job.get('companyName')}*"
+                            f"  `[{source}]`"
+                        )
                         st.markdown(f"- 📍 {job.get('location')}")
+                        if job.get("relevance"):
+                            st.markdown(f"- 💡 {job.get('relevance')}")
                         st.markdown(f"- 🔗 [View Job]({job.get('link')})")
                         st.markdown("---")
                 else:
-                    st.warning("No Jooble jobs found.")
+                    st.warning("Aucun emploi presentiel trouve.")
 
 
 

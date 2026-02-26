@@ -23,6 +23,7 @@ def fetch_remote_jobs(search_query, location="india", rows=60):
                     "companyName": item.get("company_name"),
                     "location": item.get("candidate_required_location") or "Remote",
                     "link": item.get("url"),
+                    "_source": "remotive",
                 }
             )
         return jobs, None
@@ -80,6 +81,7 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
                         "companyName": item.get("company"),
                         "location": item.get("location"),
                         "link": item.get("link"),
+                        "_source": "jooble",
                     }
                 )
                 if len(jobs) >= rows:
@@ -94,3 +96,70 @@ def fetch_jooble_jobs(search_query, location="", rows=60):
         return [], f"Jooble: erreur réseau ({status}) {body[:200]}"
     except Exception as exc:
         return [], f"Jooble: erreur inattendue ({exc})"
+
+
+def fetch_jsearch_jobs(search_query, location="", rows=20):
+    """
+    Location-based jobs using JSearch (RapidAPI). Requires JSEARCH_API_KEY.
+    """
+    api_key = os.getenv("JSEARCH_API_KEY")
+    if not api_key:
+        return [], "JSearch: JSEARCH_API_KEY manquant."
+
+    try:
+        query = search_query.strip()
+        if location:
+            query = f"{query} in {location}"
+
+        jobs = []
+        page = 1
+        while len(jobs) < rows and page <= 3:
+            response = requests.get(
+                "https://jsearch.p.rapidapi.com/search",
+                params={
+                    "query": query,
+                    "page": str(page),
+                    "num_pages": "1",
+                },
+                headers={
+                    "X-RapidAPI-Key": api_key,
+                    "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+                },
+                timeout=20,
+            )
+            if response.status_code == 429:
+                return jobs, "JSearch: rate limit exceeded. Try again later."
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("data", [])
+            if not results:
+                break
+            for item in results:
+                loc_parts = [
+                    item.get("job_city"),
+                    item.get("job_state"),
+                    item.get("job_country"),
+                ]
+                location_str = ", ".join(p for p in loc_parts if p)
+                if item.get("job_is_remote"):
+                    location_str = f"Remote - {location_str}" if location_str else "Remote"
+
+                jobs.append(
+                    {
+                        "title": item.get("job_title"),
+                        "companyName": item.get("employer_name"),
+                        "location": location_str or "Non specifie",
+                        "link": item.get("job_apply_link"),
+                        "_source": "jsearch",
+                        "_is_remote": item.get("job_is_remote", False),
+                    }
+                )
+                if len(jobs) >= rows:
+                    break
+            page += 1
+        return jobs, None
+    except requests.RequestException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", "n/a")
+        return [], f"JSearch: erreur reseau ({status})"
+    except Exception as exc:
+        return [], f"JSearch: erreur inattendue ({exc})"

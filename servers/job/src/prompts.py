@@ -74,9 +74,13 @@ def roadmap_mermaid_labels_from_roadmap_prompt(roadmap_text: str) -> str:
 
 def keywords_prompt(summary_text: str) -> str:
     return (
-        "Based on this resume summary, suggest the best job titles and keywords for searching jobs. "
-        "Give a comma-separated list only, no explanation.\n\nSummary: "
-        f"{summary_text}"
+        "Based on this resume summary, suggest the 5 best job titles for searching jobs on English-language job boards. "
+        "Rules:\n"
+        "- Return EXACTLY 5 keywords, no more.\n"
+        "- Use ENGLISH job titles only (e.g. 'Full Stack Developer', not 'Développeur full-stack').\n"
+        "- Keep each keyword short (2-4 words max).\n"
+        "- Give a comma-separated list only, no explanation.\n\n"
+        f"Summary: {summary_text}"
     )
 
 
@@ -108,4 +112,37 @@ def job_match_prompt(profile_json: str, jobs_json: str) -> str:
         "Schema: {\"matches\":[{\"title\":string,\"company\":string,\"score\":number,"
         "\"reasons\":[string]}]}. Return JSON only.\n\nProfile:\n"
         f"{profile_json}\n\nJobs:\n{jobs_json}"
+    )
+
+
+def job_classify_prompt(profile_summary: str, jobs_json: str, user_location: str = "") -> str:
+    location_context = ""
+    if user_location:
+        location_context = (
+            f"The candidate is based in {user_location}. "
+            f"Jobs located in or near {user_location} are highly relevant.\n\n"
+        )
+    return (
+        "You are a job classification assistant. Given a candidate's resume summary "
+        "and a list of job postings (JSON array), do two things:\n"
+        "1. Classify each job as EXACTLY \"Remote\" or \"Presentiel\" (on-site/hybrid).\n"
+        "2. Explain in 1 sentence why the job is a good or bad SKILLS match for the candidate.\n\n"
+        f"{location_context}"
+        "Classification rules:\n"
+        "- If the job location contains 'Remote', 'Anywhere', 'Worldwide', or "
+        "_is_remote is true → \"Remote\".\n"
+        "- Everything else (specific city, hybrid, on-site) → \"Presentiel\".\n"
+        "- ONLY use \"Remote\" or \"Presentiel\". No other value.\n\n"
+        "Relevance rules:\n"
+        "- Judge relevance based on SKILLS match (technologies, experience level), "
+        "NOT based on location. Location-based jobs are expected and wanted.\n\n"
+        "Return JSON ONLY (no markdown, no ```), with this schema:\n"
+        "{\"classified_jobs\": [\n"
+        "  {\"title\": string, \"companyName\": string, "
+        "\"location\": string, \"link\": string, \"source\": string, "
+        "\"category\": \"Remote\" | \"Presentiel\", "
+        "\"relevance\": string}\n"
+        "]}\n\n"
+        f"Candidate summary:\n{profile_summary}\n\n"
+        f"Jobs:\n{jobs_json}"
     )

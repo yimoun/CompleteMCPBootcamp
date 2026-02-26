@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP 
-from src.ai_tools import analyze_career_gaps, extract_resume_profile, rank_jobs
-from src.job_api import fetch_remote_jobs, fetch_jooble_jobs
+from src.ai_tools import analyze_career_gaps, extract_resume_profile, rank_jobs, classify_jobs
+from src.job_api import fetch_remote_jobs, fetch_jooble_jobs, fetch_jsearch_jobs
 
 load_dotenv()
 
@@ -9,13 +9,15 @@ mcp = FastMCP("Job Recommender")
 
 @mcp.tool()
 async def fetch_remote(search_query: str, location: str = "", rows: int = 60):
-    """Fetch remote job listings from Remotive and Jooble APIs."""
+    """Fetch job listings from Remotive, Jooble, and JSearch APIs."""
     remote_jobs, remote_err = fetch_remote_jobs(search_query, location=location, rows=rows)
     jooble_jobs, jooble_err = fetch_jooble_jobs(search_query, location=location, rows=rows)
+    jsearch_jobs, jsearch_err = fetch_jsearch_jobs(search_query, location=location, rows=rows)
     return {
         "remote_jobs": remote_jobs,
         "jooble_jobs": jooble_jobs,
-        "errors": [e for e in (remote_err, jooble_err) if e],
+        "jsearch_jobs": jsearch_jobs,
+        "errors": [e for e in (remote_err, jooble_err, jsearch_err) if e],
     }
 
 
