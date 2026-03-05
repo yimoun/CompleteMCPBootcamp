@@ -1,18 +1,27 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
+from groq import Groq
 from tavily import TavilyClient
 
-# Load environment variables
-load_dotenv()
 
 # Configure APIs
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+load_dotenv()
+# initialize Groq client using key from .env
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-MODEL_INFO = "gemini-2.0-flash"
-MODEL_SCRIPT = "gemini-2.0-flash"
+# wrapper for Groq chat completion
+def ask_groq(prompt, max_tokens=500):
+    response = client.chat.completions.create(
+        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+        max_tokens=max_tokens
+    )
+    return response.choices[0].message.content
+
 
 # Streamlit page setup
 st.set_page_config(
@@ -75,7 +84,7 @@ st.markdown("""
 def get_realtime_info(query):
     """
     Fetches up-to-date information about any topic using Tavily Search API
-    and summarizes it using Gemini.
+    and summarizes it via Groq.
     """
     try:
         resp = tavily_client.search(
@@ -98,7 +107,7 @@ def get_realtime_info(query):
         st.error(f"❌ Error fetching info: {e}")
         return None
 
-    # Refine & summarize the content via Gemini
+    # summarize using Groq
     prompt = f"""
 You are a professional researcher and content creator with expertise in multiple fields.
 Using the following real-time information, write an accurate, engaging, and human-like summary
@@ -116,9 +125,7 @@ Source information:
 Output only the refined, human-readable content.
 """
     try:
-        model = genai.GenerativeModel(MODEL_INFO)
-        response = model.generate_content(prompt)
-        return response.text.strip() if response and response.text else source_info
+        return ask_groq(prompt)
     except Exception as e:
         st.error(f"❌ Error generating summary: {e}")
         return source_info
@@ -135,9 +142,7 @@ Keep it around 100–120 words.
 {info_text}
 """
     try:
-        model = genai.GenerativeModel(MODEL_SCRIPT)
-        response = model.generate_content(prompt)
-        return response.text.strip() if response and response.text else "⚠️ Could not generate video script."
+        return ask_groq(prompt)
     except Exception as e:
         st.error(f"❌ Error generating video script: {e}")
         return None
