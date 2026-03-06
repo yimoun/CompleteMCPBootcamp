@@ -1,4 +1,4 @@
-openai
+groq
 python-dotenv
 beautifulsoup4
 lxml
