@@ -13,3 +13,6 @@ Build a client that can interrac with two MCP-server
 
 
 26. Introduction to SSE and Overview
+53: MCP Tools Development
+Une question recurrente: Ai-je besoin de developper ce MCP_Server dans mon projet ou de simplement utiliser les tools exposés
+par des MCP server déja connu
